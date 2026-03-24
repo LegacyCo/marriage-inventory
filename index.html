@@ -794,6 +794,60 @@
       .section-title { font-size: var(--text-base); }
     }
 
+
+    /* ── Save progress banner ── */
+    .save-banner {
+      display: none;
+      background: var(--color-surface-warm, #FDFCF8);
+      border: 1px solid var(--color-border);
+      border-left: 3px solid var(--color-navy);
+      border-radius: var(--radius-lg);
+      padding: var(--sp-4) var(--sp-5);
+      margin-bottom: var(--sp-6);
+      align-items: center;
+      gap: var(--sp-4);
+      flex-wrap: wrap;
+    }
+    .save-banner.visible { display: flex; }
+    .save-banner-text { flex: 1; font-size: var(--text-sm); color: var(--color-text-muted); }
+    .save-banner-text strong { color: var(--color-navy); }
+    .save-banner-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+    .btn-save-progress {
+      padding: var(--sp-2) var(--sp-4);
+      background: var(--color-navy);
+      color: #fff;
+      border-radius: var(--radius-md);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      border: none;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .btn-save-progress:hover { background: var(--color-navy-hover); }
+    .btn-clear-progress {
+      padding: var(--sp-2) var(--sp-4);
+      background: transparent;
+      color: var(--color-text-faint);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      font-size: var(--text-xs);
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .btn-clear-progress:hover { color: var(--color-navy); border-color: var(--color-navy); }
+
+    /* ── Section transition pulse ── */
+    @keyframes sectionPulse {
+      0% { box-shadow: 0 0 0 0 rgba(56, 76, 94, 0.15); }
+      70% { box-shadow: 0 0 0 8px rgba(56, 76, 94, 0); }
+      100% { box-shadow: none; }
+    }
+    .section-block.just-opened { animation: sectionPulse 0.6s ease-out; }
+
     footer {
       text-align: center;
       padding: var(--sp-8) 0 var(--sp-4);
@@ -858,6 +912,15 @@
         <span class="progress-count" id="progress-count">0 of 12 sections</span>
       </div>
       <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+
+    <!-- Save progress banner -->
+    <div class="save-banner" id="save-banner">
+      <div class="save-banner-text"><strong>Progress saved.</strong> Bookmark this page or copy the link below to return to your session on this device.</div>
+      <div class="save-banner-actions">
+        <button class="btn-save-progress" id="btn-copy-link">Copy Resume Link</button>
+        <button class="btn-clear-progress" id="btn-clear-saved">Clear Saved Data</button>
+      </div>
     </div>
 
     <!-- Intro -->
@@ -1254,9 +1317,10 @@
     <div class="nav-footer">
       <div class="footer-buttons">
         <button class="btn-primary" id="btn-complete">Complete Inventory</button>
-        <button class="btn-secondary" onclick="window.print()">Print My Responses</button>
+        <button class="btn-secondary" id="btn-email-answers">Email My Answers</button>
+        <button class="btn-secondary" onclick="window.print()">Print / Save PDF</button>
       </div>
-      <p class="footer-note">Responses are private to this session. Print before closing to save a copy.</p>
+      <p class="footer-note">Responses are private to this session. Use "Email My Answers" or "Print" to keep a copy.</p>
     </div>
 
   </div><!-- /assessment-screen -->
@@ -1269,7 +1333,8 @@
     <p class="completion-body">You've worked through all twelve creation truths. This inventory isn't the end—it's the beginning of an ongoing conversation. Return to these questions as your marriage grows and changes.</p>
     <p class="completion-verse">"Two are better than one… A cord of three strands is not quickly broken."<br>— Ecclesiastes 4:9, 12</p>
     <div class="footer-buttons">
-      <button class="btn-primary" onclick="window.print()">Print My Responses</button>
+      <button class="btn-primary" id="btn-email-completion">Email My Answers</button>
+      <button class="btn-secondary" onclick="window.print()">Print / Save PDF</button>
       <button class="btn-ghost" id="btn-restart">Start Over</button>
     </div>
   </div>
@@ -1283,7 +1348,28 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
-  // ── Welcome → Assessment transition ─────────────
+  // ══════════════════════════════════════════════════
+  //  SECTION TITLES (for email formatting)
+  // ══════════════════════════════════════════════════
+  const SECTION_TITLES = [
+    '', // 0-indexed padding
+    'Personal Value and Equality',
+    'Shared Authority and Responsibility',
+    'The Blessing of Children',
+    "God's Abundant Provision",
+    'Relational Need and Fulfillment',
+    'Honesty, Openness, and Transparency',
+    'A Unique "One Flesh" Relationship',
+    'Marriage As a Lifelong Commitment',
+    'Marriage as an Exclusive, Intimate Relationship',
+    'Sacrificial Love',
+    'Submission',
+    'A Glimpse into the Mystery of Our Relationship with God',
+  ];
+
+  // ══════════════════════════════════════════════════
+  //  WELCOME → ASSESSMENT
+  // ══════════════════════════════════════════════════
   const welcomeScreen = document.getElementById('welcome-screen');
   const assessScreen  = document.getElementById('assessment-screen');
 
@@ -1293,50 +1379,87 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
-  // ── Accordion logic ──────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  ACCORDION
+  // ══════════════════════════════════════════════════
   const sections = document.querySelectorAll('.section-block');
 
-  sections.forEach(block => {
-    const toggle = block.querySelector('.section-toggle');
-    const body = block.querySelector('.section-body');
+  function openSection(block) {
+    block.classList.add('is-open');
+    block.querySelector('.section-toggle').setAttribute('aria-expanded', 'true');
+    block.classList.add('just-opened');
+    block.addEventListener('animationend', () => block.classList.remove('just-opened'), { once: true });
+    setTimeout(() => block.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 120);
+  }
 
-    toggle.addEventListener('click', () => {
+  function closeSection(block) {
+    block.classList.remove('is-open');
+    block.querySelector('.section-toggle').setAttribute('aria-expanded', 'false');
+  }
+
+  sections.forEach((block, idx) => {
+    block.querySelector('.section-toggle').addEventListener('click', () => {
       const isOpen = block.classList.contains('is-open');
-      // Toggle this section
       block.classList.toggle('is-open', !isOpen);
-      toggle.setAttribute('aria-expanded', String(!isOpen));
-
-      // Smooth scroll into view when opening
+      block.querySelector('.section-toggle').setAttribute('aria-expanded', String(!isOpen));
       if (!isOpen) {
-        setTimeout(() => {
-          block.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 100);
+        setTimeout(() => block.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
       }
     });
   });
 
-  // Expand / Collapse all
   document.getElementById('btn-expand-all').addEventListener('click', () => {
-    sections.forEach(b => {
-      b.classList.add('is-open');
-      b.querySelector('.section-toggle').setAttribute('aria-expanded', 'true');
-    });
+    sections.forEach(b => openSection(b));
   });
 
   document.getElementById('btn-collapse-all').addEventListener('click', () => {
-    sections.forEach(b => {
-      b.classList.remove('is-open');
-      b.querySelector('.section-toggle').setAttribute('aria-expanded', 'false');
-    });
+    sections.forEach(b => closeSection(b));
   });
 
-  // ── Progress tracking ────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  AUTO-CLOSE COMPLETED, AUTO-OPEN NEXT
+  // ══════════════════════════════════════════════════
+  // Track previous completion state per section
+  const prevComplete = {};
+
+  function checkAutoAdvance() {
+    sections.forEach((block, idx) => {
+      const qs = block.querySelectorAll('.q-response');
+      const answered = Array.from(qs).filter(t => t.value.trim().length > 0).length;
+      const nowComplete = answered === qs.length;
+      const wasComplete = prevComplete[idx] || false;
+
+      // Just became complete (all 5 answered) and section is currently open
+      if (nowComplete && !wasComplete && block.classList.contains('is-open')) {
+        prevComplete[idx] = true;
+        // Small delay so the last keystroke feels settled
+        setTimeout(() => {
+          closeSection(block);
+          // Open next section if it exists and isn't complete
+          const nextBlock = sections[idx + 1];
+          if (nextBlock) {
+            const nextQs = nextBlock.querySelectorAll('.q-response');
+            const nextAnswered = Array.from(nextQs).filter(t => t.value.trim().length > 0).length;
+            if (nextAnswered < nextQs.length) {
+              openSection(nextBlock);
+            }
+          }
+        }, 600);
+      }
+
+      // Reset if user clears answers
+      if (!nowComplete) prevComplete[idx] = false;
+    });
+  }
+
+  // ══════════════════════════════════════════════════
+  //  PROGRESS TRACKING
+  // ══════════════════════════════════════════════════
   function updateProgress() {
     const all = document.querySelectorAll('.q-response');
     const filled = Array.from(all).filter(t => t.value.trim().length > 0).length;
-    const total = all.length; // 60
+    const total = all.length;
 
-    // Per-section status badges
     const sectionsDone = new Set();
     sections.forEach(block => {
       const sNum = block.dataset.section;
@@ -1348,39 +1471,258 @@
         statusEl.classList.toggle('done', answered === qs.length);
       }
       if (answered > 0) sectionsDone.add(sNum);
-      // Mark complete badge on number
       block.classList.toggle('is-complete', answered === qs.length && qs.length > 0);
     });
 
-    // Overall progress bar
     const pct = Math.round((filled / total) * 100);
     document.getElementById('progress-fill').style.width = pct + '%';
     document.getElementById('progress-count').textContent = sectionsDone.size + ' of 12 sections touched';
     document.getElementById('sticky-progress').textContent = sectionsDone.size + ' / 12 sections';
+
+    // Auto-save to localStorage on every change
+    saveToStorage();
+    checkAutoAdvance();
   }
 
   document.querySelectorAll('.q-response').forEach(ta => {
     ta.addEventListener('input', updateProgress);
-    // Auto-size textarea as user types
     ta.addEventListener('input', function() {
       this.style.height = 'auto';
       this.style.height = Math.max(76, this.scrollHeight) + 'px';
     });
   });
 
+  // ══════════════════════════════════════════════════
+  //  SAVE & CONTINUE (localStorage)
+  // ══════════════════════════════════════════════════
+  const STORAGE_KEY = 'mi_responses_v1';
+
+  function saveToStorage() {
+    try {
+      const data = {};
+      document.querySelectorAll('.q-response').forEach(t => {
+        if (t.value.trim()) {
+          data['s' + t.dataset.section + 'q' + t.dataset.q] = t.value;
+        }
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      // Show save banner once they have at least 1 answer
+      const hasSaved = Object.keys(data).length > 0;
+      document.getElementById('save-banner').classList.toggle('visible', hasSaved);
+    } catch(e) {}
+  }
+
+  function loadFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!Object.keys(data).length) return false;
+      document.querySelectorAll('.q-response').forEach(t => {
+        const key = 's' + t.dataset.section + 'q' + t.dataset.q;
+        if (data[key]) {
+          t.value = data[key];
+          // Restore height
+          t.style.height = 'auto';
+          t.style.height = Math.max(76, t.scrollHeight) + 'px';
+        }
+      });
+      return true;
+    } catch(e) { return false; }
+  }
+
+  function clearStorage() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+  }
+
+  // Copy resume link (current URL)
+  document.getElementById('btn-copy-link').addEventListener('click', () => {
+    const url = window.location.href.split('?')[0].split('#')[0];
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('Link copied — bookmark it to resume your session on this device.');
+    }).catch(() => {
+      showToast('Copy this URL to resume: ' + url);
+    });
+  });
+
+  document.getElementById('btn-clear-saved').addEventListener('click', () => {
+    if (confirm('This will clear your saved progress. Are you sure?')) {
+      clearStorage();
+      document.querySelectorAll('.q-response').forEach(t => { t.value = ''; t.style.height = ''; });
+      document.getElementById('save-banner').classList.remove('visible');
+      updateProgress();
+      showToast('Saved progress cleared.');
+    }
+  });
+
+  // ── Load saved responses on page start ──
+  const hadSaved = loadFromStorage();
   updateProgress();
 
-  // ── Sticky bar ───────────────────────────────────
+  if (hadSaved) {
+    // Jump straight to assessment if they have saved data
+    welcomeScreen.style.display = 'none';
+    assessScreen.style.display  = 'block';
+    showToast('Welcome back — your progress has been restored.');
+    // Open the first incomplete section
+    for (let i = 0; i < sections.length; i++) {
+      const qs = sections[i].querySelectorAll('.q-response');
+      const answered = Array.from(qs).filter(t => t.value.trim().length > 0).length;
+      if (answered < qs.length) {
+        openSection(sections[i]);
+        break;
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════
+  //  STICKY BAR
+  // ══════════════════════════════════════════════════
   const stickyBar = document.getElementById('sticky-bar');
   const header = document.querySelector('.site-header');
-
   const observer = new IntersectionObserver(entries => {
     stickyBar.classList.toggle('visible', !entries[0].isIntersecting);
   }, { threshold: 0 });
-
   if (header) observer.observe(header);
 
-  // ── Complete ─────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  EMAIL MY ANSWERS
+  // ══════════════════════════════════════════════════
+  const QUESTION_TEXTS = {
+    '1': [
+      'What are some ways in which your spouse makes you feel honored as an individual—one made equally in God's image?',
+      'What are some ways you and your spouse are different? Do you value those differences?',
+      'How do you affirm your spouse? In what ways do you fail to honor your spouse as an equal?',
+      'How good are you at listening? Do you dominate conversations with your spouse?',
+      'Think of someone you greatly respect. Compare how you treat them with how you treat your spouse.',
+    ],
+    '2': [
+      'Where do you share responsibilities well in your marriage? How could you do better?',
+      'What different strengths do you bring as husband and wife?',
+      'How would you describe your mission as a couple?',
+      'Where do you feel an imbalance of responsibility or effort in your marriage?',
+      'In what areas do you need to communicate better about sharing responsibilities?',
+    ],
+    '3': [
+      'Do you view your children as a blessing or burden (or both)?',
+      'Do you want to become parents? What are good and godly reasons for wanting or not wanting children?',
+      'How are you affected by cultural influences that diminish the value of children and parenthood?',
+      'How does "oneness" in your marriage affect your approach to having and raising children?',
+      'Have you discussed your approach to parenting together after thoughtful and prayerful discussions?',
+    ],
+    '4': [
+      'How has God provided for you in marriage? Discuss examples of His abundant provision.',
+      'Do you thank God for how He provides? How can you incorporate that into your prayer time?',
+      'In what specific areas do you need to seek God's provision for your marriage?',
+      'How is your prayer life as individuals, as a couple, and as a family?',
+      'Do you spend time as a couple and family reading the Bible together?',
+    ],
+    '5': [
+      'Do you value your marriage above your other relationships? How do you find relational fulfillment?',
+      'What are your important human relationships other than marriage? Do any feel more important?',
+      'How can you show your spouse that your marriage is more important than any other relationship?',
+      'Besides parenting, do you and your spouse have common interests and activities?',
+      'What gives you a strong feeling of "us" in your marriage?',
+    ],
+    '6': [
+      'How do mutual respect and empathy facilitate honesty and transparency in your marriage?',
+      'When are you too eager to point out weakness in your spouse? How can you communicate acceptance instead?',
+      'Are you a person who invites transparency and honesty? How can you encourage your spouse to be more open?',
+      'Where do you struggle with sharing openly with your spouse? How can you improve?',
+      'What do you feel is the right balance in what to share with your spouse?',
+    ],
+    '7': [
+      'What does it mean in practice for your marriage to be a unique "one flesh" relationship?',
+      'What are some practical expressions of oneness in your relationship with your spouse?',
+      'What is God's role in creating oneness in marriage? How can God be the third strand?',
+      'Does God's "one flesh" design mean you must share all the same interests?',
+      'How can you grow in oneness with your spouse? What attitudes and actions need to change?',
+    ],
+    '8': [
+      'Are you committed to marriage as a "till death do us part" relationship?',
+      'What is God's view of divorce? How does it compare with your view?',
+      'How can you communicate—in word and deed—that you are committed to your spouse?',
+      'What do you want to hear from your spouse that would help you feel secure?',
+      'Do you believe God has the best plan for your marriage? What are the specific benefits?',
+    ],
+    '9': [
+      'How do you experience intimacy in each area of your marriage (emotional, relational, spiritual, physical)?',
+      'What positive steps can you take to grow intimacy in different areas of your marriage?',
+      'How should sexual intimacy build on and foster equality and mutual respect?',
+      'Why is sexual exclusivity so important to the "oneness" marriage relationship?',
+      'What does it mean in practice for a husband and wife to give their bodies to each other?',
+    ],
+    '10': [
+      'Why is sacrificial love so important to restoring God's creation design for marriage?',
+      'What is the difference between unhealthy rule and servant leadership?',
+      'What does servant leadership look like specifically in your marriage?',
+      'How does Christ's example show husbands how to love their wives in daily care and service?',
+      'What is the relationship between a husband's sacrificial love and a wife's submission?',
+    ],
+    '11': [
+      'What is your reaction to the word "submission"? How does it make you feel?',
+      'How does your perception change when you consider that Christ is the supreme example of submission?',
+      'Why does God view submission as a positive quality for all godly relationships?',
+      'Why is a wife's submission particularly important in marriage?',
+      'How does submission work cooperatively with husbands loving their wives sacrificially?',
+    ],
+    '12': [
+      'How does your marriage reflect the grace, mercy, and forgiveness we see in God's relationship with us?',
+      'How can your marriage help your children and others discover their relationship with God?',
+      'What can your marriage teach you about your relationship with Christ?',
+      'In what specific ways do you give priority to your marriage above all other human relationships?',
+      'How do you need to be careful not to substitute your spouse for Christ?',
+    ],
+  };
+
+  function buildEmailBody() {
+    let body = 'A MARRIAGE INVENTORY — My Responses\n';
+    body += 'Applying God\'s Creation Truths to Your Marriage Today\n';
+    body += '=' .repeat(55) + '\n\n';
+
+    for (let s = 1; s <= 12; s++) {
+      const block = document.querySelector('#section-' + s);
+      if (!block) continue;
+      const responses = block.querySelectorAll('.q-response');
+      const answered = Array.from(responses).filter(t => t.value.trim()).length;
+      if (answered === 0) continue; // skip empty sections
+
+      body += 'SECTION ' + s + ': ' + SECTION_TITLES[s].toUpperCase() + '\n';
+      body += '-'.repeat(40) + '\n';
+
+      responses.forEach((ta, i) => {
+        if (ta.value.trim()) {
+          const qText = (QUESTION_TEXTS[String(s)] && QUESTION_TEXTS[String(s)][i]) || ('Question ' + (i + 1));
+          body += '\nQ' + (i + 1) + '. ' + qText + '\n';
+          body += ta.value.trim() + '\n';
+        }
+      });
+      body += '\n';
+    }
+
+    body += '=' .repeat(55) + '\n';
+    body += 'Made to Last by Legacy Co — legacyos.polsia.app\n';
+    return body;
+  }
+
+  function triggerEmail() {
+    const body = buildEmailBody();
+    const subject = encodeURIComponent('My Marriage Inventory Responses');
+    const encodedBody = encodeURIComponent(body);
+    // mailto has a ~2000 char limit in some clients — warn if very long
+    const mailto = 'mailto:?subject=' + subject + '&body=' + encodedBody;
+    if (mailto.length > 8000) {
+      showToast('Opening your email client — your answers are ready to send.');
+    }
+    window.location.href = mailto;
+  }
+
+  document.getElementById('btn-email-answers').addEventListener('click', triggerEmail);
+  document.getElementById('btn-email-completion').addEventListener('click', triggerEmail);
+
+  // ══════════════════════════════════════════════════
+  //  COMPLETE & RESTART
+  // ══════════════════════════════════════════════════
   document.getElementById('btn-complete').addEventListener('click', () => {
     document.getElementById('assessment-screen').style.display = 'none';
     document.getElementById('completion-screen').style.display = 'block';
@@ -1388,26 +1730,30 @@
   });
 
   document.getElementById('btn-restart').addEventListener('click', () => {
-    if (confirm('This will clear all your responses. Continue?')) {
+    if (confirm('This will clear all your responses and saved progress. Continue?')) {
+      clearStorage();
       document.querySelectorAll('.q-response').forEach(t => { t.value = ''; t.style.height = ''; });
       document.getElementById('completion-screen').style.display = 'none';
       document.getElementById('assessment-screen').style.display = 'block';
-      // Open first section
+      document.getElementById('save-banner').classList.remove('visible');
       sections.forEach((b, i) => {
         b.classList.toggle('is-open', i === 0);
         b.querySelector('.section-toggle').setAttribute('aria-expanded', i === 0 ? 'true' : 'false');
       });
+      Object.keys(prevComplete).forEach(k => delete prevComplete[k]);
       updateProgress();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   });
 
-  // ── Toast ────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  //  TOAST
+  // ══════════════════════════════════════════════════
   function showToast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2800);
+    setTimeout(() => t.classList.remove('show'), 3500);
   }
 </script>
 
